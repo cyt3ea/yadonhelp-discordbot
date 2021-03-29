@@ -3,7 +3,6 @@ import os
 import json
 import random
 from replit import db
-from keep_alive import keep_alive
 
 client = discord.Client()
 cmdList = {
@@ -258,5 +257,4 @@ def pretty(d, indent=0):
       prettyPrint = prettyPrint + ('\t' * (indent+1) + str(value)) + '\n'
   return prettyPrint
 
-keep_alive()
-client.run(os.getenv('TOKEN'))
+client.run(os.getenv("DISCORD_BOT_TOKEN"))
