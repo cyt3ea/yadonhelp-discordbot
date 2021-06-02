@@ -2,7 +2,9 @@ import discord
 import os
 import json
 import random
+import copy
 from replit import db
+from keep_alive import keep_alive
 
 client = discord.Client()
 cmdList = {
@@ -15,10 +17,10 @@ cmdList = {
   'list_players': 'lists all players and their preferred roles',
   'lets_play': 'assigns players roles based on preferences and available roles',
   'lets_play_rng': 'assigns players roles based on available roles',
-  'should/do/how/why/what/is/can/does/will': 'have a life question? let yadon help you find an answer...',
-  'goodnight': 'let yadon wish you a good night',
+  'should/do/how/why/what/is/can/does/will/are': 'have a life question? let yadon help you find an answer...',
+  'goodnight': 'wish yadon a good night',
   'ruthere': 'check if yadon is listening'}
-questionKeywords = ['should', 'do', 'how', 'why', 'what', 'is', 'can', 'does', 'will']
+questionKeywords = ['should', 'do', 'how', 'why', 'what', 'is', 'can', 'does', 'will', 'are', 'where']
 shouldQuestionAnswers = [
   "It is certain",
   "It is decidedly so",
@@ -52,17 +54,22 @@ async def on_message(message):
     if message.author == client.user:
         return
 
-    if not (message.content.startswith('/yadonhelp') or  message.content.startswith('/yadon')):
+    if not message.content.startswith('/yadon'):
       return
 
     splitMsg = message.content.split()
     if len(splitMsg) <= 1:
       await message.channel.send(get_missing_command_help())
       return
-
     cmd = splitMsg[1]
     params = splitMsg[2:]
+
+    if cmd not in cmdList.keys() and cmd not in questionKeywords:
+      cmd = 'lets_play'
+      params = splitMsg[1:]
+
     result = run_command(cmd, params)
+    if 
     await message.channel.send(result)
 
 def run_command(cmd, params):
@@ -103,7 +110,7 @@ def answer_question(params):
 
 def setup_lets_play(params, isRng):
   if len(params) <= 0:
-    return 'Missing players in the party: "/yadonhelp lets_play <space delimited list of players or roles>"\n - specifying a player means they still need to be assigned an available role\n - specifying a role (i.e. top, mid, jg, supp, adc) means this role has already been claimed by someone else in the queue and cannot be assigned to a player in the party'
+    return 'Missing players in the party: "/yadon lets_play <space delimited list of players or roles>"\n - specifying a player means they still need to be assigned an available role\n - specifying a role (i.e. top, mid, jg, supp, adc) means this role has already been claimed by someone else in the queue and cannot be assigned to a player in the party'
   if len(params) > 5:
     return "There are too many players in this party (" + str(len(params)) + "). A game of league can only support up to five champions."
 
@@ -127,9 +134,10 @@ def setup_lets_play(params, isRng):
     return lets_play(players, rolesToFill)
 
 def lets_play_rng(players, rolesToFill):
-  fillRolesMap = {
-    'fill': players
-  }
+  fillRolesMap = {}
+  for role in teamRoles:
+    fillRolesMap[role] = players
+
   roles, found = assign_roles(fillRolesMap, rolesToFill)
   return pretty(roles)
 
@@ -145,19 +153,28 @@ def lets_play(players, rolesToFill):
 
 def assign_roles(playerRoles, roles):
   assignedRoles = {}
-  playerRolesCopy = dict(playerRoles)
+  playerRolesCopy = copy.deepcopy(playerRoles)
+
   random.shuffle(roles)
   for role in roles:
     playerForRole = ''
     if role in playerRoles.keys() and len(playerRolesCopy[role]) > 0:
       playerForRole = random.choice(playerRolesCopy[role])
-    elif 'fill' in playerRoles.keys() and len(playerRolesCopy['fill']) > 0:
-      playerForRole = random.choice(playerRolesCopy['fill'])
     else:
       continue
     assignedRoles[role] = playerForRole
     removePlayerFromMap(playerForRole, playerRolesCopy)
+
+  if not areAllPlayersAssigned(playerRolesCopy):
+    return assignedRoles, False
+  
   return assignedRoles, True
+
+def areAllPlayersAssigned(playerRoleMap):
+  for role in playerRoleMap.keys():
+    if len(playerRoleMap[role]) != 0:
+      return False
+  return True
 
 def removePlayerFromMap(player, playerRoleMap):
   for role in playerRoleMap.keys():
@@ -173,6 +190,16 @@ def get_player_roles_map(params):
         playerRoles[role].append(player)
       else:
         playerRoles[role] = [player]
+
+  if 'fill' in playerRoles.keys():
+    for player in playerRoles['fill']:
+      for role in teamRoles:
+        if role in playerRoles.keys():
+          playerRoles[role].append(player)
+        else:
+          playerRoles[role] = [player]
+    del playerRoles['fill']
+
   return playerRoles
 
 def list_players():
@@ -183,7 +210,7 @@ def list_players():
 
 def delete_player(params):
   if len(params) != 1:
-    return 'Missing player id: "/yadonhelp delete_player <i.e. @slowpokeau>"'
+    return 'Missing player id: "/yadon delete_player <i.e. @slowpokeau>"'
   
   playerid = params[0]
   if playerid not in db.keys():
@@ -194,7 +221,7 @@ def delete_player(params):
 
 def get_player(params):
   if len(params) != 1:
-    return 'Missing player id: "/yadonhelp get_player <i.e. @slowpokeau>"'
+    return 'Missing player id: "/yadon get_player <i.e. @slowpokeau>"'
  
   playerid = params[0]
   if playerid not in db.keys():
@@ -203,7 +230,7 @@ def get_player(params):
 
 def add_player(params):
   if len(params) != 1:
-    return 'Missing player id: "/yadonhelp add_player <i.e. @slowpokeau>"'
+    return 'Missing player id: "/yadon add_player <i.e. @slowpokeau>"'
 
   playerid = params[0]
   if playerid in db.keys():
@@ -213,9 +240,9 @@ def add_player(params):
 
 def set_player(params):
   if len(params) < 1:
-    return 'Missing player id: "/yadonhelp set_player <i.e. @slowpokeau> <i.e. jg,supp,top>"'
+    return 'Missing player id: "/yadon set_player <i.e. @slowpokeau> <i.e. jg,supp,top>"'
   if len(params) < 2:
-    return 'Missing player roles: "/yadonhelp set_player <i.e. @slowpokeau> <i.e. jg,supp,top>"'
+    return 'Missing player roles: "/yadon set_player <i.e. @slowpokeau> <i.e. jg,supp,top>"'
 
   playerid = params[0]
   if playerid not in db.keys():
@@ -244,7 +271,7 @@ def get_command_help(cmd):
   return helpText + pretty(cmdList)
 
 def get_missing_command_help():
-  helpText = 'Please format commands as "/yadonhelp <cmd>". List of available commands:\n'
+  helpText = 'Please format commands as "/yadon <cmd>". Excluding a command defaults to "lets_play".\n\nList of available commands:\n'
   return helpText + pretty(cmdList)
 
 def pretty(d, indent=0):
@@ -257,4 +284,5 @@ def pretty(d, indent=0):
       prettyPrint = prettyPrint + ('\t' * (indent+1) + str(value)) + '\n'
   return prettyPrint
 
-client.run(os.getenv("DISCORD_BOT_TOKEN"))
+keep_alive()
+client.run(os.getenv('TOKEN'))
